@@ -6,6 +6,7 @@
 #include <vector>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <sys/stat.h>
 
 using namespace std;
 
@@ -105,6 +106,73 @@ static void update_window_title()
     glfwSetWindowTitle(window, ss.str().c_str());
 }
 
+static void compile_shader(GLuint &prog)
+{
+    GLuint vs = glCreateShader (GL_VERTEX_SHADER);
+    glShaderSource (vs, 1, &vertex_shader, NULL);
+    glCompileShader (vs);
+
+    std::ifstream t("shader.glsl");
+    if(!t.is_open()) {
+        cerr << "Cannot open shader.glsl!" << endl;
+        return;
+    }
+    std::string str((std::istreambuf_iterator<char>(t)),
+                     std::istreambuf_iterator<char>());
+    const char *src  = str.c_str();
+
+    GLuint fs = glCreateShader (GL_FRAGMENT_SHADER);
+    glShaderSource (fs, 1, &src, NULL);
+    glCompileShader (fs);
+
+    int success;
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
+    if(!success) {
+        int s;
+        glGetShaderiv(fs, GL_INFO_LOG_LENGTH, &s);
+
+        char *buf = new char[s];
+        glGetShaderInfoLog(fs, s, &s, buf);
+
+        cerr << buf << endl;
+        delete [] buf;
+        return;
+    }
+
+    prog = glCreateProgram ();
+    glAttachShader (prog, fs);
+    glAttachShader (prog, vs);
+    glLinkProgram (prog);
+
+    glGetProgramiv(prog, GL_LINK_STATUS, &success);
+    if(!success) {
+        int s;
+        glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &s);
+
+        char *buf = new char[s];
+        glGetProgramInfoLog(prog, s, &s, buf);
+
+        cerr << buf << endl;
+        delete [] buf;
+        return;
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+}
+
+static time_t last_mtime;
+
+static time_t get_mtime(const char *path)
+{
+    struct stat statbuf;
+    if (stat(path, &statbuf) == -1) {
+        perror(path);
+        exit(1);
+    }
+    return statbuf.st_mtime;
+}
+
 int main(int argc, char *argv[])
 {
     if(!glfwInit()) {
@@ -141,41 +209,10 @@ int main(int argc, char *argv[])
     cout << "Renderer: " << glGetString(GL_RENDERER) << endl;
     cout << "OpenGL Version: " << glGetString(GL_VERSION) << endl;
 
-    GLuint vs = glCreateShader (GL_VERTEX_SHADER);
-    glShaderSource (vs, 1, &vertex_shader, NULL);
-    glCompileShader (vs);
+    GLuint shader_programme;
+    compile_shader(shader_programme);
 
-    std::ifstream t("shader.glsl");
-    if(!t.is_open()) {
-        cerr << "Cannot open shader.glsl!" << endl;
-        return 1;
-    }
-    std::string str((std::istreambuf_iterator<char>(t)),
-                     std::istreambuf_iterator<char>());
-    const char *src  = str.c_str();
-
-    GLuint fs = glCreateShader (GL_FRAGMENT_SHADER);
-    glShaderSource (fs, 1, &src, NULL);
-    glCompileShader (fs);
-
-    int success;
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
-    if(!success) {
-        int s;
-        glGetShaderiv(fs, GL_INFO_LOG_LENGTH, &s);
-
-        char *buf = new char[s];
-        glGetShaderInfoLog(fs, s, &s, buf);
-
-        cerr << buf << endl;
-        delete [] buf;
-        return 1;
-    }
-
-    GLuint shader_programme = glCreateProgram ();
-    glAttachShader (shader_programme, fs);
-    glAttachShader (shader_programme, vs);
-    glLinkProgram (shader_programme);
+    last_mtime = get_mtime("shader.glsl");
 
     float points[] = {
        -1.0f,  1.0f,  0.0f,
@@ -203,7 +240,18 @@ int main(int argc, char *argv[])
 
     last_time = glfwGetTime();
 
-    while(!glfwWindowShouldClose(window)) {
+    while(1) {
+	time_t new_time = get_mtime("shader.glsl");
+	if(new_time != last_mtime) {
+		glDeleteProgram(shader_programme);
+		compile_shader(shader_programme);
+		glUseProgram(shader_programme);
+		last_mtime = new_time;
+	}
+
+	if(glfwWindowShouldClose(window))
+		break;
+
         glfwGetWindowSize(window, &w, &h);
         glUniform2d(glGetUniformLocation(shader_programme, "screen_size"), (double)w, (double)h);
         glUniform1d(glGetUniformLocation(shader_programme, "screen_ratio"), (double)w / (double)h);
@@ -217,9 +265,9 @@ int main(int argc, char *argv[])
         glDrawArrays (GL_TRIANGLES, 0, 6);
 
         glfwSwapBuffers(window);
-        glfwWaitEvents();
+        glfwPollEvents();
 
-        ticks++; 
+        ticks++;
         current_time = glfwGetTime();
         if(current_time - last_time > 1.0) {
             fps = ticks;
