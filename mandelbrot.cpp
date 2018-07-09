@@ -4,6 +4,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <limits>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <sys/stat.h>
@@ -75,7 +76,8 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 		cy += d;
 	} else if(keys[GLFW_KEY_S]) {
 		cy -= d;
-	} else if(keys[GLFW_KEY_MINUS]) {
+	} else if(keys[GLFW_KEY_MINUS] &&
+		  itr < std::numeric_limits <int>::max() - 10) {
 		itr += 10;
 	} else if(keys[GLFW_KEY_EQUAL]) {
 		itr -= 10;
